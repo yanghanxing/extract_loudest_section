@@ -1,8 +1,7 @@
-MAKEFILE_DIR := /tmp/extract_loudest_section/
+MAKEFILE_DIR := build
 
 # Where compiled objects are stored.
-OBJDIR := $(MAKEFILE_DIR)/gen/obj/
-BINDIR := $(MAKEFILE_DIR)/gen/bin/
+OBJDIR := $(MAKEFILE_DIR)/obj/
 
 CXX := gcc
 CXXOPTS := --std=c++11 -O3 -DNDEBUG
@@ -10,7 +9,7 @@ INCLUDES := -I.
 LDOPTS :=
 LIBS := -lstdc++ -lm
 
-EXECUTABLE_PATH := $(BINDIR)/extract_loudest_section
+EXECUTABLE_PATH := extract_loudest_section
 
 EXECUTABLE_SRCS := $(wildcard ./*.cc)
 EXECUTABLE_OBJS := $(addprefix $(OBJDIR), \
@@ -29,4 +28,5 @@ $(EXECUTABLE_PATH): $(EXECUTABLE_OBJS)
 	$(LDOPTS) $(LIBS)
 
 clean:
-	rm -rf $(MAKEFILE_DIR)/gen
+	rm -rf $(MAKEFILE_DIR)/obj
+	rm -rf $(EXECUTABLE_PATH)

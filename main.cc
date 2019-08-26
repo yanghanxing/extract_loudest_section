@@ -88,10 +88,65 @@ void TrimToLoudestSegment(const std::vector<float>& input,
             input.begin() + loudest_end_index, output->begin());
 }
 
+void TrimNoise(const std::vector<float>& input,
+               std::vector<float>* output,
+               const float max_noise_percentage,
+               const float min_volume_percentage) {
+  float total_volume = 0.0f;
+  for (float sample : input) {
+    total_volume += fabsf(sample * sample);
+  }
+
+  const int64_t input_size = input.size();
+  const float min_volume = total_volume / input_size * min_volume_percentage;
+  const float max_noise = total_volume * max_noise_percentage;
+
+  int low_count = 0, normal_count = 0;
+  float noise = 0.0f;
+  int start_index = 0;
+  for (int64_t i = start_index; i < input_size; ++i) {
+    const float volume = fabsf(input[i] * input[i]);
+
+    noise += volume;
+    if (noise >= max_noise)
+      break;
+
+    if (volume < min_volume) {
+      if (++low_count > normal_count)
+        start_index = i;
+    } else {
+      low_count = 0;
+      normal_count++;
+    }
+  }
+
+  low_count = 0, normal_count = 0;
+  noise = 0.0f;
+  int end_index = input_size - 1;
+  for (int64_t i = end_index; i >= 0; --i) {
+    const float volume = fabsf(input[i] * input[i]);
+
+    noise += volume;
+    if (noise >= max_noise)
+      break;
+
+    if (volume < min_volume) {
+      if (++low_count > normal_count)
+        end_index = i;
+    } else {
+      low_count = 0;
+      normal_count++;
+    }
+  }
+
+  output->resize(end_index - start_index + 1);
+  std::copy(input.begin() + start_index,
+            input.begin() + end_index, output->begin());
+}
+
 Status TrimFile(const std::string& input_filename,
                 const std::string& output_filename,
-                const int64_t desired_length_ms,
-		const float min_volume) {
+                const int64_t desired_length_ms) {
   MemMappedFile input_file(input_filename);
 
   std::vector<float> wav_samples;
@@ -122,19 +177,12 @@ Status TrimFile(const std::string& input_filename,
     wav_samples = mono_samples;
   }
 
-  const int64_t desired_samples = (desired_length_ms * sample_rate) / 1000;
   std::vector<float> trimmed_samples;
-  TrimToLoudestSegment(wav_samples, desired_samples, &trimmed_samples);
-  float total_volume = 0.0f;
-  for (float trimmed_sample : trimmed_samples) {
-    total_volume += fabsf(trimmed_sample);
-  }
-  const float average_volume = total_volume / desired_samples;
-  if (average_volume < min_volume) {
-    std::cerr << "Skipped '" << input_filename << "' as too quiet (" 
-	      << average_volume << ")" << std::endl;
-    return Status::OK();
-  }
+  TrimNoise(wav_samples, &trimmed_samples, 0.5f, 0.25f);
+  TrimNoise(trimmed_samples, &trimmed_samples, 0.25f, 0.25f);
+
+  const int64_t desired_samples = (desired_length_ms * sample_rate) / 1000;
+  TrimToLoudestSegment(trimmed_samples, desired_samples, &trimmed_samples);
 
   std::string output_wav_data;
   Status save_wav_status =
@@ -157,13 +205,14 @@ void SplitFilename(const std::string& full_path, std::string* dir,
 }
 
 int main(int argc, const char* argv[]) {
-  if (argc < 3) {
+  if (argc < 4) {
     std::cerr
-        << "You must supply paths to input and output wav files as arguments"
+        << "You must supply desired length ms and paths to input and output wav files as arguments"
         << std::endl;
     return -1;
   }
-  const std::string input_glob = argv[1];
+  const int64_t desired_length_ms = atoi(argv[1]);
+  const std::string input_glob = argv[2];
   glob_t glob_result;
   glob(input_glob.c_str(), GLOB_TILDE, nullptr, &glob_result);
   std::vector<std::string> input_filenames;
@@ -172,7 +221,7 @@ int main(int argc, const char* argv[]) {
   }
   globfree(&glob_result);
 
-  const std::string output_root = argv[2];
+  const std::string output_root = argv[3];
   std::vector<std::string> output_filenames;
   std::set<std::string> output_dirs;
   for (const std::string& input_filename : input_filenames) {
@@ -195,10 +244,8 @@ int main(int argc, const char* argv[]) {
   for (int64_t i = 0; i < input_filenames.size(); ++i) {
     const std::string input_filename = input_filenames[i];
     const std::string output_filename = output_filenames[i];
-    const int64_t desired_length_ms = 1000;
-    const float min_volume = 0.004f;
     Status trim_status =
-      TrimFile(input_filename, output_filename, desired_length_ms, min_volume);
+      TrimFile(input_filename, output_filename, desired_length_ms);
     if (!trim_status.ok()) {
       std::cerr << "Failed on '" << input_filename << "' => '"
                 << output_filename << "' with error " << trim_status;

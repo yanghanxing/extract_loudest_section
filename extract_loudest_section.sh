@@ -12,6 +12,7 @@ usage(){
 
 if [ ! -n "$1" ] ;then
 	usage
+	exit
 fi
 
 echo "**Cut audio file $desired_length(ms) from $input_dir dir to $output_dir dir**"
